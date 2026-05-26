@@ -7,6 +7,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from .models import DataSource, RawRecord, UploadJob
+from .normalizer import normalize_sap_upload
 
 # Columns we expect in a SAP CSV upload
 SAP_EXPECTED_COLUMNS = {"plant_code", "fuel_type", "quantity", "unit", "transaction_date"}
@@ -146,4 +147,45 @@ def sap_upload(request):
             "errors": errors,
         },
         status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+def normalize_sap_job(request, upload_job_id):
+    """
+    POST /api/uploads/sap/{upload_job_id}/normalize/
+
+    Triggers normalization of all pending RawRecords for the given
+    UploadJob, creating EmissionRecord rows and any ValidationIssues.
+    """
+    try:
+        upload_job = UploadJob.objects.select_related(
+            "datasource__organization"
+        ).get(pk=upload_job_id, datasource__source_type=DataSource.SourceType.SAP)
+    except UploadJob.DoesNotExist:
+        return Response(
+            {"error": f"SAP UploadJob with id={upload_job_id} not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if upload_job.upload_status != UploadJob.UploadStatus.COMPLETED:
+        return Response(
+            {
+                "error": (
+                    f"UploadJob is not in 'completed' state "
+                    f"(current: {upload_job.upload_status}). "
+                    "Upload must complete successfully before normalizing."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    summary = normalize_sap_upload(upload_job)
+
+    return Response(
+        {
+            "upload_job_id": upload_job.pk,
+            **summary,
+        },
+        status=status.HTTP_200_OK,
     )
