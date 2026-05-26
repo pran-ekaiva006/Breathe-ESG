@@ -189,3 +189,198 @@ def normalize_sap_job(request, upload_job_id):
         },
         status=status.HTTP_200_OK,
     )
+
+
+# ── Utility Upload ─────────────────────────────────────────────────────────────
+
+UTILITY_EXPECTED_COLUMNS = {"meter_id", "billing_start", "billing_end", "usage_kwh", "tariff"}
+
+UTILITY_DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]
+
+
+def _parse_date_utility(raw: str):
+    from datetime import datetime
+    for fmt in UTILITY_DATE_FORMATS:
+        try:
+            return datetime.strptime(raw.strip(), fmt).date()
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser])
+def utility_upload(request):
+    """
+    POST /api/uploads/utility/
+
+    Accepts a CSV file for utility (electricity) billing data.
+    Creates an UploadJob and stores each row as a RawRecord.
+
+    Required form fields:
+      - file         : the CSV file
+      - datasource_id: ID of a DataSource with source_type=UTILITY
+    """
+    # ── 1. Validate required fields ───────────────────────────────────────────
+    file_obj = request.FILES.get("file")
+    datasource_id = request.data.get("datasource_id")
+
+    if not file_obj:
+        return Response(
+            {"error": "No file provided. Send a CSV as 'file' in multipart form."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not datasource_id:
+        return Response(
+            {"error": "'datasource_id' field is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 2. Resolve DataSource ─────────────────────────────────────────────────
+    try:
+        datasource = DataSource.objects.get(
+            pk=datasource_id, source_type=DataSource.SourceType.UTILITY
+        )
+    except DataSource.DoesNotExist:
+        return Response(
+            {"error": f"DataSource id={datasource_id} with source_type=UTILITY not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # ── 3. Validate file type ─────────────────────────────────────────────────
+    if not file_obj.name.endswith(".csv"):
+        return Response(
+            {"error": "Invalid file type. Only .csv files are accepted."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 4. Create UploadJob ───────────────────────────────────────────────────
+    upload_job = UploadJob.objects.create(
+        datasource=datasource,
+        file_name=file_obj.name,
+        upload_status=UploadJob.UploadStatus.PROCESSING,
+    )
+
+    # ── 5. Decode ─────────────────────────────────────────────────────────────
+    try:
+        decoded = file_obj.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "File encoding not supported. Please upload a UTF-8 CSV."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    if not reader.fieldnames:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "The CSV file is empty or has no header row."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 6. Parse rows ─────────────────────────────────────────────────────────
+    rows_processed = 0
+    rows_failed = 0
+    errors = []
+    raw_records_to_create = []
+
+    for row_number, row in enumerate(reader, start=2):
+        try:
+            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
+
+            if not any(clean_row.values()):
+                continue
+
+            row_errors = []
+
+            # Validate billing period ─────────────────────────────────────────
+            billing_start = _parse_date_utility(clean_row.get("billing_start", ""))
+            billing_end = _parse_date_utility(clean_row.get("billing_end", ""))
+
+            if billing_start is None:
+                row_errors.append(
+                    f"Invalid billing_start: '{clean_row.get('billing_start')}'."
+                )
+            if billing_end is None:
+                row_errors.append(
+                    f"Invalid billing_end: '{clean_row.get('billing_end')}'."
+                )
+            if billing_start and billing_end and billing_end <= billing_start:
+                row_errors.append(
+                    f"billing_end ({billing_end}) must be after billing_start ({billing_start})."
+                )
+
+            # Validate usage_kwh ──────────────────────────────────────────────
+            raw_usage = clean_row.get("usage_kwh", "")
+            try:
+                usage = float(raw_usage.replace(",", "")) if raw_usage else None
+                if usage is None:
+                    row_errors.append("Missing 'usage_kwh'.")
+                elif usage < 0:
+                    row_errors.append(f"Negative 'usage_kwh' ({usage}) is not allowed.")
+            except ValueError:
+                row_errors.append(f"Non-numeric 'usage_kwh': '{raw_usage}'.")
+
+            if row_errors:
+                rows_failed += 1
+                errors.append({"row": row_number, "errors": row_errors})
+                # Preserve the raw row even on failure for traceability
+                raw_records_to_create.append(
+                    RawRecord(
+                        upload_job=upload_job,
+                        raw_payload={**clean_row, "_row_errors": row_errors},
+                        processing_status=RawRecord.ProcessingStatus.FAILED,
+                        error_message=" | ".join(row_errors),
+                    )
+                )
+                continue
+
+            raw_records_to_create.append(
+                RawRecord(
+                    upload_job=upload_job,
+                    raw_payload=clean_row,
+                    processing_status=RawRecord.ProcessingStatus.PENDING,
+                )
+            )
+            rows_processed += 1
+
+        except Exception as exc:
+            rows_failed += 1
+            errors.append({"row": row_number, "error": str(exc)})
+
+    # ── 7. Bulk insert ────────────────────────────────────────────────────────
+    if raw_records_to_create:
+        RawRecord.objects.bulk_create(raw_records_to_create)
+
+    # ── 8. Finalise status ────────────────────────────────────────────────────
+    if rows_processed == 0 and rows_failed == 0:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "The CSV contained no data rows."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    upload_job.upload_status = (
+        UploadJob.UploadStatus.FAILED
+        if rows_processed == 0
+        else UploadJob.UploadStatus.COMPLETED
+    )
+    upload_job.save()
+
+    return Response(
+        {
+            "upload_job_id": upload_job.pk,
+            "file_name": upload_job.file_name,
+            "upload_status": upload_job.upload_status,
+            "rows_processed": rows_processed,
+            "rows_failed": rows_failed,
+            "errors": errors,
+        },
+        status=status.HTTP_201_CREATED,
+    )
