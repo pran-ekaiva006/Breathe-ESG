@@ -1,9 +1,6 @@
-from rest_framework.routers import DefaultRouter
-
-from .views import ValidationIssueViewSet
-
-router = DefaultRouter()
-router.register(r"validation-issues", ValidationIssueViewSet, basename="validation-issue")
+# pyrefly: ignore [missing-import]
+from django.urls import path
 
 app_name = "validation_engine"
-urlpatterns = router.urls
+
+urlpatterns = []

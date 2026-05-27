@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from django.db import models
 
 from organizations.models import Organization
