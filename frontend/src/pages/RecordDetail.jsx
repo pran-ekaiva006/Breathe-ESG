@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { getEmission, getEmissionIssues, getEmissionAudits } from '../api/client'
+import api, { getEmission, getEmissionIssues, getEmissionAudits } from '../api/client'
 
 const STATUS_STYLES = {
   pending:  { background: '#fefce8', color: '#a16207' },
@@ -45,9 +45,13 @@ export default function RecordDetail() {
   const [audits, setAudits]   = useState([])
   const [tab, setTab]         = useState('issues')
   const [loading, setLoading] = useState(true)
+  
+  // Action state
+  const [actionLoading, setActionLoading] = useState(false)
+  const [message, setMessage] = useState(null)
 
-  useEffect(() => {
-    Promise.all([
+  const loadData = useCallback(() => {
+    return Promise.all([
       getEmission(id),
       getEmissionIssues(id),
       getEmissionAudits(id),
@@ -55,18 +59,79 @@ export default function RecordDetail() {
       setRecord(rec)
       setIssues(iss.results || iss || [])
       setAudits(aud.results || aud || [])
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    })
   }, [id])
+
+  useEffect(() => {
+    loadData().finally(() => setLoading(false))
+  }, [loadData])
+
+  const handleAction = async (actionType) => {
+    setActionLoading(true)
+    setMessage(null)
+    try {
+      await api.post(`/api/emissions/${id}/${actionType}/`)
+      await loadData()
+      setMessage({ type: 'success', text: `Record successfully ${actionType}d.` })
+    } catch (err) {
+      setMessage({ 
+        type: 'error', 
+        text: err.response?.data?.error || `Failed to ${actionType} record.` 
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   if (loading) return <Layout title="Record Detail"><p style={{ fontSize: '0.85rem', color: '#6b7280' }}>Loading…</p></Layout>
   if (!record) return <Layout title="Record Detail"><p style={{ fontSize: '0.85rem', color: '#dc2626' }}>Record not found.</p></Layout>
 
   return (
     <Layout title={`Record #${record.id}`}>
-      <button onClick={() => navigate(-1)} className="btn btn-secondary" style={{ marginBottom: 20, fontSize: '0.8rem', padding: '6px 12px' }}>
-        ← Back to Reviews
-      </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <button onClick={() => navigate(-1)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
+          ← Back to Reviews
+        </button>
+        
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {actionLoading && <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>Processing…</span>}
+          <button 
+            onClick={() => handleAction('approve')}
+            disabled={record.locked || actionLoading || record.approval_status === 'approved'}
+            className="btn"
+            style={{ 
+              background: '#15803d', color: '#fff', border: 'none', 
+              opacity: (record.locked || actionLoading || record.approval_status === 'approved') ? 0.5 : 1 
+            }}
+          >
+            Approve
+          </button>
+          <button 
+            onClick={() => handleAction('reject')}
+            disabled={record.locked || actionLoading || record.approval_status === 'rejected'}
+            className="btn"
+            style={{ 
+              background: '#dc2626', color: '#fff', border: 'none',
+              opacity: (record.locked || actionLoading || record.approval_status === 'rejected') ? 0.5 : 1
+            }}
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+
+      {/* Messaging */}
+      {message && (
+        <div style={{ 
+          marginBottom: 20, padding: '12px 16px', borderRadius: 6, fontSize: '0.85rem',
+          background: message.type === 'success' ? '#f0fdf4' : '#fef2f2',
+          color: message.type === 'success' ? '#15803d' : '#dc2626',
+          border: `1px solid ${message.type === 'success' ? '#bbf7d0' : '#fecaca'}`
+        }}>
+          {message.text}
+        </div>
+      )}
 
       {/* 1. Normalized Record Data */}
       <div className="card" style={{ marginBottom: 24 }}>
@@ -229,4 +294,5 @@ export default function RecordDetail() {
     </Layout>
   )
 }
+
 
