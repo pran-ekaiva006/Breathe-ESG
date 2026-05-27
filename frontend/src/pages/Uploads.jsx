@@ -2,18 +2,38 @@ import { useState } from 'react'
 import Layout from '../components/Layout'
 import { uploadSAP, uploadUtility, uploadTravel } from '../api/client'
 
-const SOURCES = ['SAP', 'UTILITY', 'TRAVEL']
-const UPLOAD_FNS = { SAP: uploadSAP, UTILITY: uploadUtility, TRAVEL: uploadTravel }
+const UPLOAD_SECTIONS = [
+  {
+    key: 'SAP',
+    title: 'SAP Data Upload',
+    description: 'Upload fuel consumption and operational data exported from SAP. Expected columns: plant_code, fuel_type, quantity, unit, transaction_date.',
+    uploadFn: uploadSAP,
+    endpoint: 'POST /api/uploads/sap/',
+  },
+  {
+    key: 'UTILITY',
+    title: 'Utility Data Upload',
+    description: 'Upload electricity billing data from utility providers. Expected columns: meter_id, billing_start, billing_end, usage_kwh, tariff.',
+    uploadFn: uploadUtility,
+    endpoint: 'POST /api/uploads/utility/',
+  },
+  {
+    key: 'TRAVEL',
+    title: 'Travel Data Upload',
+    description: 'Upload business travel records for Scope 3 emissions. Expected columns: traveler_name, transport_type, departure_airport, arrival_airport, distance_km, trip_date.',
+    uploadFn: uploadTravel,
+    endpoint: 'POST /api/uploads/travel/',
+  },
+]
 
-export default function Uploads() {
-  const [source, setSource] = useState('SAP')
-  const [datasourceId, setDatasourceId] = useState('')
+function UploadCard({ section }) {
   const [file, setFile] = useState(null)
+  const [datasourceId, setDatasourceId] = useState('')
+  const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e) => {
+  const handleUpload = async (e) => {
     e.preventDefault()
     if (!file || !datasourceId) return
     setLoading(true)
@@ -23,74 +43,134 @@ export default function Uploads() {
     fd.append('file', file)
     fd.append('datasource_id', datasourceId)
     try {
-      const data = await UPLOAD_FNS[source](fd)
+      const data = await section.uploadFn(fd)
       setResult(data)
     } catch (err) {
-      setError(err.response?.data?.error ?? 'Upload failed.')
+      setError(err.response?.data?.error ?? 'Upload failed. Please check your file and try again.')
     } finally {
       setLoading(false)
     }
   }
 
+  const resetForm = () => {
+    setFile(null)
+    setResult(null)
+    setError(null)
+    setDatasourceId('')
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 16 }}>
+        <div className="flex items-center" style={{ gap: 10, marginBottom: 6 }}>
+          <span className="badge badge-gray" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
+            {section.key}
+          </span>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#111827' }}>
+            {section.title}
+          </h3>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280', lineHeight: 1.5 }}>
+          {section.description}
+        </p>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleUpload}>
+        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 12, alignItems: 'end' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+              DataSource ID
+            </label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              placeholder="e.g. 1"
+              value={datasourceId}
+              onChange={e => setDatasourceId(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+              CSV File
+            </label>
+            <input
+              className="input"
+              type="file"
+              accept=".csv"
+              onChange={e => setFile(e.target.files[0])}
+              required
+              style={{ padding: '6px 12px' }}
+            />
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+            {loading ? 'Uploading…' : 'Upload'}
+          </button>
+        </div>
+      </form>
+
+      {/* Loading state */}
+      {loading && (
+        <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 8, background: '#f3f4f6', fontSize: '0.8rem', color: '#6b7280' }}>
+          ⏳ Processing your file…
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', fontSize: '0.8rem', color: '#dc2626' }}>
+          ✗ {error}
+          <button onClick={resetForm} className="btn btn-secondary" style={{ marginLeft: 12, fontSize: '0.75rem', padding: '4px 10px' }}>
+            Reset
+          </button>
+        </div>
+      )}
+
+      {/* Success state */}
+      {result && (
+        <div style={{ marginTop: 16, padding: '16px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+          <p style={{ margin: '0 0 8px', fontSize: '0.8rem', fontWeight: 600, color: '#15803d' }}>
+            ✓ Upload complete
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            <div>
+              <p className="stat-label">Job ID</p>
+              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#111827' }}>#{result.upload_job_id}</p>
+            </div>
+            <div>
+              <p className="stat-label">Status</p>
+              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#111827' }}>{result.upload_status}</p>
+            </div>
+            <div>
+              <p className="stat-label">Rows OK</p>
+              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#15803d' }}>{result.rows_processed}</p>
+            </div>
+            <div>
+              <p className="stat-label">Rows Failed</p>
+              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: result.rows_failed > 0 ? '#dc2626' : '#111827' }}>{result.rows_failed}</p>
+            </div>
+          </div>
+          <button onClick={resetForm} className="btn btn-secondary" style={{ marginTop: 12, fontSize: '0.75rem', padding: '4px 10px' }}>
+            Upload Another
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Uploads() {
   return (
     <Layout title="Uploads">
-      <div className="max-w-lg">
-        <div className="card mb-6">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Upload CSV Data</h2>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Source Type</label>
-              <select className="select" value={source} onChange={e => setSource(e.target.value)}>
-                {SOURCES.map(s => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">DataSource ID</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="e.g. 1"
-                value={datasourceId}
-                onChange={e => setDatasourceId(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">CSV File</label>
-              <input
-                className="input"
-                type="file"
-                accept=".csv"
-                onChange={e => setFile(e.target.files[0])}
-                required
-              />
-            </div>
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Uploading…' : 'Upload'}
-            </button>
-          </form>
-        </div>
-
-        {error && (
-          <div className="card border-red-200 bg-red-50 text-red-700 text-sm">{error}</div>
-        )}
-
-        {result && (
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Upload Summary</p>
-            <dl className="grid grid-cols-2 gap-y-2 text-sm">
-              <dt className="text-gray-500">Status</dt>
-              <dd className="font-medium">{result.upload_status}</dd>
-              <dt className="text-gray-500">Rows Processed</dt>
-              <dd className="font-medium text-green-700">{result.rows_processed}</dd>
-              <dt className="text-gray-500">Rows Failed</dt>
-              <dd className="font-medium text-red-700">{result.rows_failed}</dd>
-              <dt className="text-gray-500">Job ID</dt>
-              <dd className="font-medium">#{result.upload_job_id}</dd>
-            </dl>
-          </div>
-        )}
-      </div>
+      <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 24 }}>
+        Upload CSV files from SAP, utility providers, or travel systems to ingest ESG source data.
+      </p>
+      {UPLOAD_SECTIONS.map(section => (
+        <UploadCard key={section.key} section={section} />
+      ))}
     </Layout>
   )
 }
