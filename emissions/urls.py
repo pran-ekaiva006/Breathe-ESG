@@ -1,5 +1,9 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
+
+from .views import EmissionRecordViewSet
+
+router = DefaultRouter()
+router.register(r"emissions", EmissionRecordViewSet, basename="emission")
 
 app_name = "emissions"
-
-urlpatterns = []
+urlpatterns = router.urls
