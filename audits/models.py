@@ -1,4 +1,6 @@
+# pyrefly: ignore [missing-import]
 from django.conf import settings
+# pyrefly: ignore [missing-import]
 from django.db import models
 
 from emissions.models import EmissionRecord

@@ -2,7 +2,9 @@
 URL configuration for BreatheESG project.
 """
 
+# pyrefly: ignore [missing-import]
 from django.contrib import admin
+# pyrefly: ignore [missing-import]
 from django.urls import path, include
 
 from .views import health_check

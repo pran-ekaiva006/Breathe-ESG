@@ -427,3 +427,202 @@ def normalize_utility_job(request, upload_job_id):
         },
         status=status.HTTP_200_OK,
     )
+
+
+# ── Travel Upload ─────────────────────────────────────────────────────────
+
+TRAVEL_EXPECTED_COLUMNS = {
+    "traveler_name", "transport_type", "departure_airport",
+    "arrival_airport", "distance_km", "trip_date",
+}
+
+TRAVEL_DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]
+
+
+def _parse_date_travel(raw: str):
+    from datetime import datetime
+    for fmt in TRAVEL_DATE_FORMATS:
+        try:
+            return datetime.strptime(raw.strip(), fmt).date()
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser])
+def travel_upload(request):
+    """
+    POST /api/uploads/travel/
+
+    Accepts a CSV file for business travel data.
+    Creates an UploadJob and stores each row as a RawRecord.
+
+    Required form fields:
+      - file         : the CSV file
+      - datasource_id: ID of a DataSource with source_type=TRAVEL
+    """
+    # ── 1. Validate required fields ───────────────────────────────────────────
+    file_obj = request.FILES.get("file")
+    datasource_id = request.data.get("datasource_id")
+
+    if not file_obj:
+        return Response(
+            {"error": "No file provided. Send a CSV as 'file' in multipart form."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not datasource_id:
+        return Response(
+            {"error": "'datasource_id' field is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 2. Resolve DataSource ─────────────────────────────────────────────────
+    try:
+        datasource = DataSource.objects.get(
+            pk=datasource_id, source_type=DataSource.SourceType.TRAVEL
+        )
+    except DataSource.DoesNotExist:
+        return Response(
+            {"error": f"DataSource id={datasource_id} with source_type=TRAVEL not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # ── 3. Validate file type ─────────────────────────────────────────────────
+    if not file_obj.name.endswith(".csv"):
+        return Response(
+            {"error": "Invalid file type. Only .csv files are accepted."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 4. Create UploadJob ───────────────────────────────────────────────────
+    upload_job = UploadJob.objects.create(
+        datasource=datasource,
+        file_name=file_obj.name,
+        upload_status=UploadJob.UploadStatus.PROCESSING,
+    )
+
+    # ── 5. Decode ───────────────────────────────────────────────────────────
+    try:
+        decoded = file_obj.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "File encoding not supported. Please upload a UTF-8 CSV."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    if not reader.fieldnames:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "The CSV file is empty or has no header row."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # ── 6. Parse rows ─────────────────────────────────────────────────────────
+    rows_processed = 0
+    rows_failed = 0
+    errors = []
+    raw_records_to_create = []
+
+    for row_number, row in enumerate(reader, start=2):
+        try:
+            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
+
+            if not any(clean_row.values()):
+                continue
+
+            row_errors = []
+
+            # Validate airport codes ──────────────────────────────────────────
+            dep = clean_row.get("departure_airport", "").strip()
+            arr = clean_row.get("arrival_airport", "").strip()
+            if not dep:
+                row_errors.append("Missing 'departure_airport'.")
+            if not arr:
+                row_errors.append("Missing 'arrival_airport'.")
+            if dep and arr and dep.upper() == arr.upper():
+                row_errors.append(
+                    f"'departure_airport' and 'arrival_airport' are the same ({dep})."
+                )
+
+            # Validate distance_km ────────────────────────────────────────────
+            raw_dist = clean_row.get("distance_km", "")
+            try:
+                distance = float(raw_dist.replace(",", "")) if raw_dist else None
+                if distance is None:
+                    row_errors.append("Missing 'distance_km'.")
+                elif distance <= 0:
+                    row_errors.append(
+                        f"'distance_km' must be positive (got {distance})."
+                    )
+            except ValueError:
+                row_errors.append(f"Non-numeric 'distance_km': '{raw_dist}'.")
+
+            # Validate trip_date ──────────────────────────────────────────────
+            raw_date = clean_row.get("trip_date", "")
+            trip_date = _parse_date_travel(raw_date)
+            if trip_date is None:
+                row_errors.append(f"Invalid or missing 'trip_date': '{raw_date}'.")
+
+            if row_errors:
+                rows_failed += 1
+                errors.append({"row": row_number, "errors": row_errors})
+                raw_records_to_create.append(
+                    RawRecord(
+                        upload_job=upload_job,
+                        raw_payload={**clean_row, "_row_errors": row_errors},
+                        processing_status=RawRecord.ProcessingStatus.FAILED,
+                        error_message=" | ".join(row_errors),
+                    )
+                )
+                continue
+
+            raw_records_to_create.append(
+                RawRecord(
+                    upload_job=upload_job,
+                    raw_payload=clean_row,
+                    processing_status=RawRecord.ProcessingStatus.PENDING,
+                )
+            )
+            rows_processed += 1
+
+        except Exception as exc:
+            rows_failed += 1
+            errors.append({"row": row_number, "error": str(exc)})
+
+    # ── 7. Bulk insert ────────────────────────────────────────────────────────
+    if raw_records_to_create:
+        RawRecord.objects.bulk_create(raw_records_to_create)
+
+    # ── 8. Finalise status ────────────────────────────────────────────────────
+    if rows_processed == 0 and rows_failed == 0:
+        upload_job.upload_status = UploadJob.UploadStatus.FAILED
+        upload_job.save()
+        return Response(
+            {"error": "The CSV contained no data rows."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    upload_job.upload_status = (
+        UploadJob.UploadStatus.FAILED
+        if rows_processed == 0
+        else UploadJob.UploadStatus.COMPLETED
+    )
+    upload_job.save()
+
+    return Response(
+        {
+            "upload_job_id": upload_job.pk,
+            "file_name": upload_job.file_name,
+            "upload_status": upload_job.upload_status,
+            "rows_processed": rows_processed,
+            "rows_failed": rows_failed,
+            "errors": errors,
+        },
+        status=status.HTTP_201_CREATED,
+    )
