@@ -1,4 +1,17 @@
-# BreatheESG ESG Data Ingestion Platform
+<div align="center">
+  <h1>BreatheESG ESG Data Ingestion Platform</h1>
+  <p>
+    <a href="[Insert Live Demo Link Here]"><strong>🚀 View Live Demo</strong></a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=white" alt="Django" />
+    <img src="https://img.shields.io/badge/Django_REST-ff1709?style=for-the-badge&logo=django&logoColor=white" alt="DRF" />
+    <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+    <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
+    <img src="https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E" alt="Vite" />
+    <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind" />
+  </p>
+</div>
 
 ## Project Overview
 
@@ -8,14 +21,14 @@ Upon ingestion, the platform executes a normalization workflow that extracts rel
 
 ## Features
 
-* SAP CSV ingestion
-* Utility electricity ingestion
-* Travel data ingestion
-* Data normalization
-* Validation engine
-* Audit logging
-* Analyst approval workflow
-* Multi-tenant support
+* **SAP CSV ingestion:** Process fuel consumption and operational data directly from SAP exports.
+* **Utility electricity ingestion:** Ingest electricity billing and usage data from utility providers.
+* **Travel data ingestion:** Track Scope 3 corporate business travel records.
+* **Data normalization:** Convert varied units (e.g., liters, gallons, kWh) into standardized CO2e values using configurable emission factors.
+* **Validation engine:** Automatically flag suspicious records such as negative values or unexpected data types.
+* **Audit logging:** Maintain immutable audit trails for data ingestion, normalization processes, and approval state changes.
+* **Analyst approval workflow:** UI-driven workflow allowing analysts to review pending records and explicitly approve or reject them.
+* **Multi-tenant support:** Built-in organizational boundaries to support multi-tenant environments securely.
 
 ## Architecture Overview
 
@@ -29,8 +42,7 @@ The system architecture cleanly separates concerns between data ingestion, norma
 
 * **Backend:** Django, Django REST Framework, PostgreSQL
 * **Frontend:** React, Vite, Tailwind CSS
-* **Deployment:** Render, Vercel
-* **Containerization:** Docker
+* **Deployment:** Render (Backend), Vercel (Frontend)
 
 ## Project Structure
 
@@ -98,14 +110,6 @@ The system architecture cleanly separates concerns between data ingestion, norma
    ```bash
    npm run dev
    ```
-
-## Docker Setup
-
-To run the application using Docker Compose:
-
-```bash
-docker compose up --build
-```
 
 ## API Endpoints
 
