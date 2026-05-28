@@ -1,0 +1,6 @@
+traveler_name,transport_type,departure_airport,arrival_airport,distance_km,trip_date
+Alice Smith,Flight,JFK,LHR,5555,2023-04-10
+Bob Johnson,Flight,SFO,LAX,543,2023-04-12
+Alice Smith,Hotel,LHR,LHR,0,2023-04-11
+Charlie Davis,Flight,DXB,SYD,11900,2023-05-01
+Eve White,Flight,ORD,DFW,500000,2023-05-15

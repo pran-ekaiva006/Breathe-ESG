@@ -1,0 +1,7 @@
+plant_code,fuel_type,quantity,unit,transaction_date
+PL-001,Diesel,1500.5,liters,2023-01-05
+PL-001,Natural Gas,400.25,m3,2023-01-12
+PL-002,Petrol,800,L,2023-02-01
+PL-003,Heavy Fuel Oil,1200,gallons,2023-02-15
+PL-002,Diesel,50,GAL,2023-03-01
+PL-004,Coal,250,kg,2023-03-10
