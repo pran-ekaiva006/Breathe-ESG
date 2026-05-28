@@ -42,4 +42,13 @@ export const uploadTravel = (formData) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   }).then(r => r.data)
 
+export const normalizeSAP = (id) =>
+  api.post(`/api/uploads/sap/${id}/normalize/`).then(r => r.data)
+
+export const normalizeUtility = (id) =>
+  api.post(`/api/uploads/utility/${id}/normalize/`).then(r => r.data)
+
+export const normalizeTravel = (id) =>
+  api.post(`/api/uploads/travel/${id}/normalize/`).then(r => r.data)
+
 export default api

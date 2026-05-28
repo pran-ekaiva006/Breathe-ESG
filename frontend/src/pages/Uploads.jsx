@@ -1,50 +1,42 @@
 import { useState } from 'react'
 import Layout from '../components/Layout'
-import { uploadSAP, uploadUtility, uploadTravel } from '../api/client'
+import { uploadSAP, uploadUtility, uploadTravel, normalizeSAP, normalizeUtility, normalizeTravel } from '../api/client'
 
-const UPLOAD_SECTIONS = [
-  {
-    key: 'SAP',
-    title: 'SAP Data Upload',
-    description: 'Upload fuel consumption and operational data exported from SAP. Expected columns: plant_code, fuel_type, quantity, unit, transaction_date.',
-    uploadFn: uploadSAP,
-    endpoint: 'POST /api/uploads/sap/',
-  },
-  {
-    key: 'UTILITY',
-    title: 'Utility Data Upload',
-    description: 'Upload electricity billing data from utility providers. Expected columns: meter_id, billing_start, billing_end, usage_kwh, tariff.',
-    uploadFn: uploadUtility,
-    endpoint: 'POST /api/uploads/utility/',
-  },
-  {
-    key: 'TRAVEL',
-    title: 'Travel Data Upload',
-    description: 'Upload business travel records for Scope 3 emissions. Expected columns: traveler_name, transport_type, departure_airport, arrival_airport, distance_km, trip_date.',
-    uploadFn: uploadTravel,
-    endpoint: 'POST /api/uploads/travel/',
-  },
+const SOURCE_OPTIONS = [
+  { value: 'SAP', label: 'SAP Fuel / Procurement', id: 2, uploadFn: uploadSAP, normalizeFn: normalizeSAP },
+  { value: 'UTILITY', label: 'Utility Electricity', id: 1, uploadFn: uploadUtility, normalizeFn: normalizeUtility },
+  { value: 'TRAVEL', label: 'Corporate Travel', id: 3, uploadFn: uploadTravel, normalizeFn: normalizeTravel },
 ]
 
-function UploadCard({ section }) {
+export default function Uploads() {
+  const [sourceType, setSourceType] = useState('SAP')
   const [file, setFile] = useState(null)
-  const [datasourceId, setDatasourceId] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
 
   const handleUpload = async (e) => {
     e.preventDefault()
-    if (!file || !datasourceId) return
+    if (!file || !sourceType) return
+
     setLoading(true)
     setResult(null)
     setError(null)
+
+    const config = SOURCE_OPTIONS.find(opt => opt.value === sourceType)
     const fd = new FormData()
     fd.append('file', file)
-    fd.append('datasource_id', datasourceId)
+    fd.append('datasource_id', config.id)
+
     try {
-      const data = await section.uploadFn(fd)
-      setResult(data)
+      const data = await config.uploadFn(fd)
+      if (data.upload_status === 'completed' || data.rows_processed > 0) {
+        // Automatically normalize valid records
+        const normData = await config.normalizeFn(data.upload_job_id)
+        setResult({ ...data, ...normData })
+      } else {
+        setResult(data)
+      }
     } catch (err) {
       setError(err.response?.data?.error ?? 'Upload failed. Please check your file and try again.')
     } finally {
@@ -56,121 +48,97 @@ function UploadCard({ section }) {
     setFile(null)
     setResult(null)
     setError(null)
-    setDatasourceId('')
+    // Resetting file input value visually requires a bit of DOM interaction, 
+    // but React state will handle the logic.
+    document.getElementById('csv-file-input').value = ''
   }
 
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      {/* Header */}
-      <div style={{ marginBottom: 16 }}>
-        <div className="flex items-center" style={{ gap: 10, marginBottom: 6 }}>
-          <span className="badge badge-gray" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
-            {section.key}
-          </span>
-          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#111827' }}>
-            {section.title}
-          </h3>
-        </div>
-        <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280', lineHeight: 1.5 }}>
-          {section.description}
-        </p>
-      </div>
+    <Layout title="Upload Data Source">
+      <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: 24 }}>
+        Select a source type and upload a CSV file for ingestion.
+      </p>
 
-      {/* Form */}
-      <form onSubmit={handleUpload}>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 12, alignItems: 'end' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-              DataSource ID
+      <div className="card" style={{ maxWidth: 500 }}>
+        <form onSubmit={handleUpload}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#4b5563', marginBottom: 6 }}>
+              Source Type
             </label>
-            <input
-              className="input"
-              type="number"
-              min="1"
-              placeholder="e.g. 1"
-              value={datasourceId}
-              onChange={e => setDatasourceId(e.target.value)}
-              required
-            />
+            <select
+              className="select"
+              value={sourceType}
+              onChange={e => setSourceType(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px' }}
+            >
+              {SOURCE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#4b5563', marginBottom: 6 }}>
               CSV File
             </label>
             <input
+              id="csv-file-input"
               className="input"
               type="file"
               accept=".csv"
               onChange={e => setFile(e.target.files[0])}
               required
-              style={{ padding: '6px 12px' }}
+              style={{ width: '100%', padding: '8px 12px' }}
             />
           </div>
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
-            {loading ? 'Uploading…' : 'Upload'}
+
+          <button 
+            type="submit" 
+            className="btn btn-primary" 
+            disabled={loading} 
+            style={{ width: '100%', padding: '10px', display: 'flex', justifyContent: 'center' }}
+          >
+            {loading ? 'Processing...' : 'Upload & Process'}
           </button>
-        </div>
-      </form>
+        </form>
 
-      {/* Loading state */}
-      {loading && (
-        <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 8, background: '#f3f4f6', fontSize: '0.8rem', color: '#6b7280' }}>
-          ⏳ Processing your file…
-        </div>
-      )}
-
-      {/* Error state */}
-      {error && (
-        <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', fontSize: '0.8rem', color: '#dc2626' }}>
-          ✗ {error}
-          <button onClick={resetForm} className="btn btn-secondary" style={{ marginLeft: 12, fontSize: '0.75rem', padding: '4px 10px' }}>
-            Reset
-          </button>
-        </div>
-      )}
-
-      {/* Success state */}
-      {result && (
-        <div style={{ marginTop: 16, padding: '16px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-          <p style={{ margin: '0 0 8px', fontSize: '0.8rem', fontWeight: 600, color: '#15803d' }}>
-            ✓ Upload complete
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            <div>
-              <p className="stat-label">Job ID</p>
-              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#111827' }}>#{result.upload_job_id}</p>
-            </div>
-            <div>
-              <p className="stat-label">Status</p>
-              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#111827' }}>{result.upload_status}</p>
-            </div>
-            <div>
-              <p className="stat-label">Rows OK</p>
-              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#15803d' }}>{result.rows_processed}</p>
-            </div>
-            <div>
-              <p className="stat-label">Rows Failed</p>
-              <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: result.rows_failed > 0 ? '#dc2626' : '#111827' }}>{result.rows_failed}</p>
-            </div>
+        {/* Error state */}
+        {error && (
+          <div style={{ marginTop: 20, padding: '12px 16px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', fontSize: '0.85rem', color: '#dc2626' }}>
+            ✗ {error}
           </div>
-          <button onClick={resetForm} className="btn btn-secondary" style={{ marginTop: 12, fontSize: '0.75rem', padding: '4px 10px' }}>
-            Upload Another
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+        )}
 
-export default function Uploads() {
-  return (
-    <Layout title="Uploads">
-      <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 24 }}>
-        Upload CSV files from SAP, utility providers, or travel systems to ingest ESG source data.
-      </p>
-      {UPLOAD_SECTIONS.map(section => (
-        <UploadCard key={section.key} section={section} />
-      ))}
+        {/* Success state */}
+        {result && (
+          <div style={{ marginTop: 20, padding: '16px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+            <p style={{ margin: '0 0 12px', fontSize: '0.9rem', fontWeight: 600, color: '#15803d' }}>
+              ✓ Upload complete
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div>
+                <p className="stat-label">Job ID</p>
+                <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#111827' }}>#{result.upload_job_id}</p>
+              </div>
+              <div>
+                <p className="stat-label">Status</p>
+                <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#111827' }}>{result.upload_status}</p>
+              </div>
+              <div>
+                <p className="stat-label">Rows OK</p>
+                <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#15803d' }}>{result.rows_processed}</p>
+              </div>
+              <div>
+                <p className="stat-label">Rows Failed</p>
+                <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: result.rows_failed > 0 ? '#dc2626' : '#111827' }}>{result.rows_failed}</p>
+              </div>
+            </div>
+            <button onClick={resetForm} className="btn btn-secondary" style={{ marginTop: 16, width: '100%', display: 'flex', justifyContent: 'center' }}>
+              Upload Another
+            </button>
+          </div>
+        )}
+      </div>
     </Layout>
   )
 }
