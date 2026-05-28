@@ -5,3 +5,26 @@ PL-002,Petrol,800,L,2023-02-01
 PL-003,Heavy Fuel Oil,1200,gallons,2023-02-15
 PL-002,Diesel,50,GAL,2023-03-01
 PL-004,Coal,250,kg,2023-03-10
+PL-001,Diesel,1600.0,liters,2023-04-05
+PL-001,Natural Gas,450.0,m3,2023-04-12
+PL-005,Propane,300,kg,2023-04-15
+PL-002,Petrol,810,L,2023-05-01
+PL-003,Heavy Fuel Oil,1100,gallons,2023-05-18
+PL-004,Coal,300,kilograms,2023-06-11
+PL-001,Diesel,1450,litre,2023-06-15
+PL-005,Propane,280,kg,2023-06-22
+PL-002,Petrol,790,litres,2023-07-03
+PL-003,Heavy Fuel Oil,1250,gal,2023-07-20
+PL-001,Diesel,1520.5,l,2023-08-05
+PL-004,Coal,-50,kg,2023-08-10
+PL-001,Natural Gas,410.75,cubic meter,2023-08-12
+PL-005,Propane,310,kilogram,2023-08-15
+PL-002,Diesel,60,gallon,2023-09-02
+PL-003,Heavy Fuel Oil,1150,gallons,2023-09-18
+PL-001,Natural Gas,425.5,cubic metre,2023-10-12
+PL-004,Coal,320,kg,2023-10-15
+PL-005,Propane,290,KG,2023-11-05
+PL-002,Petrol,850,L,2023-11-12
+PL-001,Diesel,1580,liters,2023-12-05
+PL-003,Heavy Fuel Oil,1300,GAL,2023-12-20
+PL-001,UnknownFuel,500,liters,2023-12-25
