@@ -125,3 +125,59 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .flex-col { flex-direction: column; }
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
+
+/* ── Responsive Adjustments ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .main-layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column; /* Stack logo and nav vertically on small screens */
+    align-items: stretch;
+    padding: 0;
+  }
+  .sidebar-logo {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    justify-content: center; /* Center the logo */
+  }
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    padding: 8px;
+    overflow-x: auto;
+    justify-content: center; /* Center the links */
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar-nav::-webkit-scrollbar {
+    display: none; /* Hide scrollbar for a cleaner look */
+  }
+  .sidebar-nav p {
+    display: none;
+  }
+  .nav-item {
+    padding: 8px 12px;
+    margin: 0 4px;
+    white-space: nowrap;
+    flex-shrink: 0; /* Prevent links from squishing */
+  }
+  .main-content {
+    margin-left: 0;
+  }
+  .page-header {
+    padding: 16px;
+  }
+  .page-body {
+    padding: 16px;
+  }
+  /* Hide the version text in sidebar footer on mobile */
+  .sidebar > div:last-child {
+    display: none;
+  }
+}
